@@ -93,7 +93,6 @@ public class HttpServer implements Runnable {
 
         while (true) {
             Socket client = serverSocket.accept();
-            System.out.println("here");
             threadPool.submit(() -> handleClient(client));
         }
     }

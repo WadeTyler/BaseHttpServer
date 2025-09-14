@@ -35,6 +35,9 @@ public class HttpResponse {
     }
 
     public String getBodyAsString() {
+        if (body instanceof String) {
+            return (String) body;
+        }
         ObjectMapper objectMapper = new ObjectMapper();
         try {
             return objectMapper.writeValueAsString(body);
