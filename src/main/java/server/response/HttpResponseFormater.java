@@ -1,12 +1,19 @@
 package server.response;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-
+/**
+ * Formats an HttpResponse into a raw HTTP response string.
+ */
 public class HttpResponseFormater {
-    public static String format(HttpResponse response) throws JsonProcessingException {
-        StringBuilder responseBuilder = new StringBuilder();
 
-        // Start with the status line
+    // format only the status line and headers (ending with CRLF CRLF)
+
+    /**
+     * Formats the status line and headers of an HttpResponse into a raw HTTP response string.
+     * @param response the HttpResponse to format
+     * @return the formatted HTTP response string
+     */
+    public static String formatHeaders(HttpResponse response) {
+        StringBuilder responseBuilder = new StringBuilder();
         responseBuilder.append(response.getHttpVersion())
                 .append(" ")
                 .append(response.getStatusCode())
@@ -14,7 +21,6 @@ public class HttpResponseFormater {
                 .append(getReasonPhrase(response.getStatusCode()))
                 .append("\r\n");
 
-        // Add headers
         if (response.getHeaders() != null) {
             for (var header : response.getHeaders().entrySet()) {
                 responseBuilder.append(header.getKey())
@@ -24,15 +30,14 @@ public class HttpResponseFormater {
             }
         }
         responseBuilder.append("\r\n");
-
-        // Add body if present
-        if (response.getBody() != null) {
-            responseBuilder.append(response.getBodyAsString());
-        }
-
         return responseBuilder.toString();
     }
 
+    /**
+     * Gets the standard reason phrase for a given HTTP status code.
+     * @param statusCode the HTTP status code
+     * @return the corresponding reason phrase
+     */
     private static String getReasonPhrase(int statusCode) {
         return switch (statusCode) {
             // 2xx Success

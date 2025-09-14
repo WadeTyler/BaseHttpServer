@@ -12,6 +12,7 @@ import server.route.Routes;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -36,7 +37,8 @@ public class HttpServer implements Runnable {
 
     /**
      * Add a route to the server
-     * @param route the route to add
+     *
+     * @param route   the route to add
      * @param handler the handler for the route
      * @return the server instance (for chaining)
      */
@@ -83,17 +85,30 @@ public class HttpServer implements Runnable {
         return route(new Route(path, "OPTIONS"), handler);
     }
 
-    // Serve static files from a directory
+    // --- End route convenience methods ---
+
+    /**
+     * Serve static files from a directory for a given URL path
+     * @param urlPath the URL path to serve static files from (e.g., "/static/")
+     * @param directory the directory to serve files from (e.g., "/static/")
+     * @return the server instance (for chaining)
+     */
     public HttpServer staticFiles(String urlPath, String directory) {
-        // Normalize paths - ensure they end with / for consistency
+        // Normalize URL path - ensure it ends with / for consistency
         String normalizedUrlPath = urlPath.endsWith("/") ? urlPath : urlPath + "/";
-        String normalizedDirectory = directory.endsWith("/") ? directory : directory + "/";
+        // Normalize directory - ensure it starts with / (classpath-absolute) and ends with /
+        String normalizedDirectory = directory;
+        if (!normalizedDirectory.startsWith("/")) {
+            normalizedDirectory = "/" + normalizedDirectory;
+        }
+        normalizedDirectory = normalizedDirectory.endsWith("/") ? normalizedDirectory : normalizedDirectory + "/";
         staticRoutes.put(normalizedUrlPath, normalizedDirectory);
         return this;
     }
 
     /**
      * Start the server
+     *
      * @throws IOException if the server fails to start
      */
     private void start() throws IOException {
@@ -111,55 +126,73 @@ public class HttpServer implements Runnable {
 
     /**
      * Handle a client request
+     *
      * @param client the client socket
      */
     private void handleClient(Socket client) {
         try {
             // Parse into HttpRequest object
             HttpRequest request = HttpRequestParser.parse(client);
-            System.out.println("Received request: " + request.getMethod() + " " + request.getPath());
-
             HttpResponse response = null;
 
-            // Check for static file routes first
-            if (request.getMethod().equalsIgnoreCase("GET")) {
-                for (String urlPath : staticRoutes.keySet()) {
-                    if (request.getPath().startsWith(urlPath)) {
-                        String filePath = staticRoutes.get(urlPath) + request.getPath().substring(urlPath.length());
-                        // If request path is just "/", serve index.html
-                        if (request.getPath().equals("/")) {
-                            filePath += "index.html";
+            // Find handler for route
+            Route requestRoute = new Route(request.getPath(), request.getMethod());
+            if (routes.containsKey(requestRoute)) {
+                HttpRequestHandler handler = routes.get(requestRoute);
+                response = handler.handle(request);
+            } else {
+                response = new HttpResponse(404, "Not Found"); // If no handler found, will be 404
+                // Check for static files
+                if (request.getMethod().equalsIgnoreCase("GET")) {
+                    for (String urlPath : staticRoutes.keySet()) {
+                        String requestPath = request.getPath();
+                        String urlPathNoSlash = urlPath.endsWith("/") ? urlPath.substring(0, urlPath.length() - 1) : urlPath;
+                        boolean matchesRoot = requestPath.equals(urlPathNoSlash);
+                        boolean matchesPrefix = requestPath.startsWith(urlPath);
+                        if (matchesRoot || matchesPrefix) {
+                            String baseDir = staticRoutes.get(urlPath);
+                            String relativePath = matchesPrefix ? requestPath.substring(urlPath.length()) : "";
+                            String filePath = baseDir + relativePath;
+                            // If end of filepath is "/" or relative is empty, serve index.html
+                            if (filePath.endsWith("/")) {
+                                filePath += "index.html";
+                            }
+                            HttpStaticRequestHandler staticHandler = new HttpStaticRequestHandler();
+                            response = staticHandler.handleStaticFile(filePath);
+                            break;
                         }
-                        HttpStaticRequestHandler staticHandler = new HttpStaticRequestHandler();
-                        response = staticHandler.handleStaticFile(filePath);
-                        break;
                     }
                 }
             }
 
-            // Find handler for route
-            if (response == null) {
-                new HttpResponse(404, "Not Found"); // If no handler found, will be 404
-
-                Route requestRoute = new Route(request.getPath(), request.getMethod());
-                if (routes.containsKey(requestRoute)) {
-                    HttpRequestHandler handler = routes.get(requestRoute);
-                    response = handler.handle(request);
-                }
+            // Ensure Content-Length is correct for current body bytes
+            if (response.getBodyBytes() != null) {
+                response.withHeader("Content-Length", String.valueOf(response.getBodyBytes().length));
+            } else {
+                response.withHeader("Content-Length", "0");
             }
 
-            // Format HttpResponse object into string
-            String httpResponseStr = HttpResponseFormater.format(response);
-
-            // Write response back to client
-            client.getOutputStream().write(httpResponseStr.getBytes());
+            // Write headers then raw body bytes to avoid corrupting binary content
+            String headers = HttpResponseFormater.formatHeaders(response);
+            client.getOutputStream().write(headers.getBytes(StandardCharsets.US_ASCII));
+            byte[] body = response.getBodyBytes();
+            if (body != null && body.length > 0) {
+                client.getOutputStream().write(body);
+            }
+            client.getOutputStream().flush();
             client.close();
+            logRequestResponse(request, response);
         } catch (Exception e) {
             e.printStackTrace();
             HttpResponse response = new HttpResponse(500, "Internal Server Error");
             try {
-                String httpResponseStr = HttpResponseFormater.format(response);
-                client.getOutputStream().write(httpResponseStr.getBytes());
+                String headers = HttpResponseFormater.formatHeaders(response);
+                client.getOutputStream().write(headers.getBytes(StandardCharsets.US_ASCII));
+                byte[] body = response.getBodyBytes();
+                if (body != null && body.length > 0) {
+                    client.getOutputStream().write(body);
+                }
+                client.getOutputStream().flush();
                 client.close();
             } catch (IOException ex) {
                 ex.printStackTrace();
@@ -182,11 +215,16 @@ public class HttpServer implements Runnable {
 
     /**
      * Start the server in a new thread
+     *
      * @return the thread the server is running in
      */
     public Thread startServer() {
         Thread serverThread = new Thread(this);
         serverThread.start();
         return serverThread;
+    }
+
+    private void logRequestResponse(HttpRequest request, HttpResponse response) {
+        System.out.println(response.getStatusCode() + " " + request.getMethod() + request.getPath());
     }
 }

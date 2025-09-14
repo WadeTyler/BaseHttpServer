@@ -1,3 +1,9 @@
 {
-  "test": "message"
+  "test": "message",
+  "number": 42,
+  "array": [
+    1,
+    2,
+    3
+  ]
 }

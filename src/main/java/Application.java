@@ -6,6 +6,7 @@ public class Application {
         HttpServer server = new HttpServer(8080);
         server
                 .routes(new BookRoutes())
+                .staticFiles("/hidden", "hidden")
                 .staticFiles("/", "/static");
         server.startServer();
     }
