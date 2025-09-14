@@ -15,12 +15,17 @@ import java.util.HashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class HttpServer {
+/**
+ * A simple HTTP server that can handle multiple routes and concurrent requests.
+ */
+public class HttpServer implements Runnable {
 
+    private final int port;
     private final ExecutorService threadPool;
     private final HashMap<Route, HttpRequestHandler> routes = new HashMap<>();
 
-    public HttpServer() {
+    public HttpServer(int port) {
+        this.port = port;
         // Create a thread pool with a fixed number of threads
         this.threadPool = Executors.newFixedThreadPool(50);
     }
@@ -77,10 +82,9 @@ public class HttpServer {
 
     /**
      * Start the server
-     * @param port the port to start the server on
      * @throws IOException if the server fails to start
      */
-    public void start(int port) throws IOException {
+    private void start() throws IOException {
         if (routes.isEmpty()) {
             System.out.println("Warning: No routes defined. Server will respond with 404 for all requests.");
         }
@@ -89,10 +93,15 @@ public class HttpServer {
 
         while (true) {
             Socket client = serverSocket.accept();
+            System.out.println("here");
             threadPool.submit(() -> handleClient(client));
         }
     }
 
+    /**
+     * Handle a client request
+     * @param client the client socket
+     */
     private void handleClient(Socket client) {
         try {
             // Parse into HttpRequest object
@@ -128,4 +137,25 @@ public class HttpServer {
         }
     }
 
+    /**
+     * Run the server (for Runnable interface)
+     */
+    @Override
+    public void run() {
+        try {
+            start();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    /**
+     * Start the server in a new thread
+     * @return the thread the server is running in
+     */
+    public Thread startServer() {
+        Thread serverThread = new Thread(this);
+        serverThread.start();
+        return serverThread;
+    }
 }

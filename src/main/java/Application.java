@@ -1,12 +1,10 @@
 import playground.books.BookRoutes;
 import server.HttpServer;
 
-import java.io.IOException;
-
 public class Application {
-    public static void main(String[] args) throws IOException {
-        HttpServer server = new HttpServer();
+    public static void main(String[] args) {
+        HttpServer server = new HttpServer(8080);
         server.routes(new BookRoutes());
-        server.start(8080);
+        server.startServer();
     }
 }
