@@ -17,16 +17,22 @@ public class GetBooksHandler implements HttpRequestHandler {
             String id = request.getQueryParams().get("id");
             Book book = BookDao.getById(id);
             if (book == null) {
-                return new HttpResponse(404, "Book not found");
+                return new HttpResponse()
+                        .withStatus(404)
+                        .withBody("Book not found");
             }
             var response = new HttpResponse(200, book);
             response.putHeader("Content-Type", "application/json");
-            return response;
+            return new HttpResponse()
+                    .withStatus(200)
+                    .withContentType("application/json")
+                    .withBody(book);
         }
 
         List<Book> books = BookDao.books;
-        var response = new HttpResponse(200, books);
-        response.putHeader("Content-Type", "application/json");
-        return response;
+        return new HttpResponse()
+                .withStatus(200)
+                .withContentType("application/json")
+                .withBody(books);
     }
 }

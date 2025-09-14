@@ -37,6 +37,12 @@ public class HttpRequest {
         return body;
     }
 
+    /**
+     * Convert the body to the specified class using Jackson ObjectMapper.
+     * @param clazz the class to convert the body to
+     * @return the body as the specified class, or null if conversion fails
+     * @param <T> the type of the class
+     */
     public <T> T getBodyAs(Class<T> clazz) {
         // Use Jackson ObjectMapper to convert body to specified class
         ObjectMapper objectMapper = new ObjectMapper();

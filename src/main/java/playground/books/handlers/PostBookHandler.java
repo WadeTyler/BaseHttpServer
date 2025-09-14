@@ -12,15 +12,22 @@ public class PostBookHandler implements HttpRequestHandler {
     public HttpResponse handle(HttpRequest request) {
         CreateBookRequest createBookRequest = request.getBodyAs(CreateBookRequest.class);
 
+        if (createBookRequest == null) {
+            return new HttpResponse()
+                    .withStatus(400)
+                    .withBody("Invalid request body.");
+        }
+
         if (createBookRequest.title() == null || createBookRequest.title().isBlank()) {
-            return new HttpResponse(400, "Title is required");
+            return new HttpResponse()
+                    .withStatus(400)
+                    .withBody("Tile is required.");
         }
 
         Book book = new Book(null, createBookRequest.title());
         Book savedBook = BookDao.addBook(book);
 
-        var response = new HttpResponse(201, savedBook);
-        response.putHeader("Content-Type", "application/json");
-        return response;
+        return new HttpResponse().withStatus(201).withHeader("Content-Type", "application/json")
+                .withBody(savedBook);
     }
 }

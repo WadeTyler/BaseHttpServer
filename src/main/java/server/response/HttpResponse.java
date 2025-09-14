@@ -11,6 +11,13 @@ public class HttpResponse {
     private Object body;
     private String httpVersion = "HTTP/1.1";
 
+    public HttpResponse() {
+        this.statusCode = 200;
+        this.body = "";
+        this.headers.put("Content-Length", "0");
+        this.headers.put("Connection", "close");
+        this.headers.put("Content-Type", "text/plain");
+    }
 
     public HttpResponse(int statusCode, Object body) {
         this.statusCode = statusCode;
@@ -64,6 +71,26 @@ public class HttpResponse {
 
     public void setHttpVersion(String httpVersion) {
         this.httpVersion = httpVersion;
+    }
+
+    public HttpResponse withHeader(String key, String value) {
+        this.headers.put(key, value);
+        return this;
+    }
+
+    public HttpResponse withBody(Object body) {
+        this.body = body;
+        return this.withHeader("Content-Length", body != null ? String.valueOf(getBodyAsString().length()) : "0");
+    }
+
+    public HttpResponse withStatus(int statusCode) {
+        this.statusCode = statusCode;
+        return this;
+    }
+
+    public HttpResponse withContentType(String contentType) {
+        this.headers.put("Content-Type", contentType);
+        return this;
     }
 
     @Override
