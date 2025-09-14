@@ -3,6 +3,7 @@ package server;
 import server.request.HttpRequest;
 import server.request.HttpRequestHandler;
 import server.request.HttpRequestParser;
+import server.request.HttpStaticRequestHandler;
 import server.response.HttpResponse;
 import server.response.HttpResponseFormater;
 import server.route.Route;
@@ -12,6 +13,7 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -23,6 +25,7 @@ public class HttpServer implements Runnable {
     private final int port;
     private final ExecutorService threadPool;
     private final HashMap<Route, HttpRequestHandler> routes = new HashMap<>();
+    private final Map<String, String> staticRoutes = new HashMap<>();
 
     public HttpServer(int port) {
         this.port = port;
@@ -80,6 +83,15 @@ public class HttpServer implements Runnable {
         return route(new Route(path, "OPTIONS"), handler);
     }
 
+    // Serve static files from a directory
+    public HttpServer staticFiles(String urlPath, String directory) {
+        // Normalize paths - ensure they end with / for consistency
+        String normalizedUrlPath = urlPath.endsWith("/") ? urlPath : urlPath + "/";
+        String normalizedDirectory = directory.endsWith("/") ? directory : directory + "/";
+        staticRoutes.put(normalizedUrlPath, normalizedDirectory);
+        return this;
+    }
+
     /**
      * Start the server
      * @throws IOException if the server fails to start
@@ -107,13 +119,33 @@ public class HttpServer implements Runnable {
             HttpRequest request = HttpRequestParser.parse(client);
             System.out.println("Received request: " + request.getMethod() + " " + request.getPath());
 
-            HttpResponse response = new HttpResponse(404, "Not Found"); // If no handler found, will be 404
+            HttpResponse response = null;
+
+            // Check for static file routes first
+            if (request.getMethod().equalsIgnoreCase("GET")) {
+                for (String urlPath : staticRoutes.keySet()) {
+                    if (request.getPath().startsWith(urlPath)) {
+                        String filePath = staticRoutes.get(urlPath) + request.getPath().substring(urlPath.length());
+                        // If request path is just "/", serve index.html
+                        if (request.getPath().equals("/")) {
+                            filePath += "index.html";
+                        }
+                        HttpStaticRequestHandler staticHandler = new HttpStaticRequestHandler();
+                        response = staticHandler.handleStaticFile(filePath);
+                        break;
+                    }
+                }
+            }
 
             // Find handler for route
-            Route requestRoute = new Route(request.getPath(), request.getMethod());
-            if (routes.containsKey(requestRoute)) {
-                HttpRequestHandler handler = routes.get(requestRoute);
-                response = handler.handle(request);
+            if (response == null) {
+                new HttpResponse(404, "Not Found"); // If no handler found, will be 404
+
+                Route requestRoute = new Route(request.getPath(), request.getMethod());
+                if (routes.containsKey(requestRoute)) {
+                    HttpRequestHandler handler = routes.get(requestRoute);
+                    response = handler.handle(request);
+                }
             }
 
             // Format HttpResponse object into string
