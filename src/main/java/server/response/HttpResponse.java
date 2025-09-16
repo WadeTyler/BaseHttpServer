@@ -2,6 +2,7 @@ package server.response;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -123,6 +124,13 @@ public class HttpResponse {
         this.bodyBytes = bodyBytes;
         this.body = null; // Clear the body object since we're using raw bytes
         return this.withHeader("Content-Length", bodyBytes != null ? String.valueOf(bodyBytes.length) : "0");
+    }
+
+    public HttpResponse json(Object body) {
+        this.body = body;
+        this.bodyBytes = body != null ? getBodyAsString().getBytes(StandardCharsets.UTF_8) : new byte[0];
+        this.headers.put("Content-Type", "application/json");
+        return this.withHeader("Content-Length", body != null ? String.valueOf(getBodyBytes().length) : "0");
     }
 
     @Override

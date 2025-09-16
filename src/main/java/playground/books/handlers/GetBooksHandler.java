@@ -32,7 +32,6 @@ public class GetBooksHandler implements HttpRequestHandler {
         List<Book> books = BookDao.books;
         return new HttpResponse()
                 .withStatus(200)
-                .withContentType("application/json")
-                .withBody(books);
+                .json(books);
     }
 }
