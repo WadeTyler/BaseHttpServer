@@ -1,5 +1,6 @@
 package server;
 
+import server.exceptions.TooManyRequestsException;
 import server.request.HttpRequest;
 import server.request.HttpRequestHandler;
 import server.request.HttpRequestParser;
@@ -10,10 +11,14 @@ import server.route.Route;
 import server.route.Routes;
 
 import java.io.IOException;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -27,6 +32,8 @@ public class HttpServer implements Runnable {
     private final ExecutorService threadPool;
     private final HashMap<Route, HttpRequestHandler> routes = new HashMap<>();
     private final Map<String, String> staticRoutes = new HashMap<>();
+    private int CLIENT_RATE_LIMIT = 0; // Max requests per minute per call per IP
+    private final HashMap<String, List<LocalDateTime>> clientRequestCounts = new HashMap<>(); // Maps IP -> List of request timestamps
 
     public HttpServer(int port) {
         this.port = port;
@@ -89,7 +96,8 @@ public class HttpServer implements Runnable {
 
     /**
      * Serve static files from a directory for a given URL path
-     * @param urlPath the URL path to serve static files from (e.g., "/static/")
+     *
+     * @param urlPath   the URL path to serve static files from (e.g., "/static/")
      * @param directory the directory to serve files from (e.g., "/static/")
      * @return the server instance (for chaining)
      */
@@ -107,6 +115,42 @@ public class HttpServer implements Runnable {
     }
 
     /**
+     * Set the rate limit for clients (requests per minute per IP)
+     * Rate limit is disabled by default (set to 0)
+     *
+     * @param requestsPerMinutePerIP the number of requests allowed per minute per IP
+     * @return the server instance (for chaining)
+     */
+    public HttpServer rateLimit(int requestsPerMinutePerIP) {
+        if (requestsPerMinutePerIP < 0) {
+            throw new IllegalArgumentException("Rate limit must be non-negative.");
+        }
+        this.CLIENT_RATE_LIMIT = requestsPerMinutePerIP;
+        return this;
+    }
+
+    private void checkClientRateLimit(String clientIP) throws TooManyRequestsException {
+        if (CLIENT_RATE_LIMIT <= 0) {
+            return; // Rate limiting is disabled
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+
+        clientRequestCounts.putIfAbsent(clientIP, new ArrayList<>());
+        List<LocalDateTime> requestTimes = clientRequestCounts.get(clientIP);
+
+        // Check if we exceed the rate limit
+        if (requestTimes.size() >= CLIENT_RATE_LIMIT) {
+            throw new TooManyRequestsException("Too many requests from IP: " + clientIP + ". " + requestTimes.size() + " requests in the last minute.");
+        }
+
+        // Add current request time
+        requestTimes.add(now);
+        clientRequestCounts.putIfAbsent(clientIP, requestTimes);
+    }
+
+
+    /**
      * Start the server
      *
      * @throws IOException if the server fails to start
@@ -116,6 +160,21 @@ public class HttpServer implements Runnable {
             System.out.println("Warning: No routes defined. Server will respond with 404 for all requests.");
         }
         ServerSocket serverSocket = new ServerSocket(port);
+        if (CLIENT_RATE_LIMIT > 0) {
+            Thread cleanerThread = new Thread(() -> {
+                while (true) {
+                    try {
+                        Thread.sleep(60000); // Sleep for 1 min
+                        clientRequestCounts.clear();
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
+                }
+            });
+            cleanerThread.setDaemon(true); // Set as daemon so it doesn't block JVM exit
+            cleanerThread.start();
+            System.out.println("Rate limiting enabled: " + CLIENT_RATE_LIMIT + " requests per minute.");
+        }
         System.out.println("Server started on port " + port);
 
         while (true) {
@@ -131,6 +190,25 @@ public class HttpServer implements Runnable {
      */
     private void handleClient(Socket client) {
         try {
+            // Check rate limit
+            String clientIP = ((InetSocketAddress) client.getRemoteSocketAddress()).getAddress().toString().replace("/", "");
+            try {
+                checkClientRateLimit(clientIP);
+            } catch (TooManyRequestsException e) {
+                var response = new HttpResponse(429)
+                        .withBody("Too Many Requests")
+                        .withHeader("Retry-After", "60"); // Suggest client to retry after 60 seconds
+
+                client.getOutputStream().write(HttpResponseFormater.formatHeaders(response).getBytes(StandardCharsets.US_ASCII));
+                byte[] body = response.getBodyBytes();
+                if (body != null && body.length > 0) {
+                    client.getOutputStream().write(body);
+                }
+                client.getOutputStream().flush();
+                client.close();
+                return;
+            }
+
             // Parse into HttpRequest object
             HttpRequest request = HttpRequestParser.parse(client);
             HttpResponse response = null;
